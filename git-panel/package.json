@@ -1,0 +1,47 @@
+{
+  "name": "opencode-git-panel",
+  "version": "1.0.0",
+  "description": "A Git section in the OpenCode V2 CLI sidebar — latest commit plus the modified and new files waiting to be committed.",
+  "type": "module",
+  "exports": {
+    "./tui": "./tui.tsx"
+  },
+  "files": [
+    "tui.tsx",
+    "data.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-tui",
+    "tui",
+    "git",
+    "git-status",
+    "commit",
+    "changes",
+    "sidebar"
+  ],
+  "license": "MIT",
+  "author": "Hugo López Fernández",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hlfernandez/opencode-v2-plugins.git",
+    "directory": "git-panel"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types test/smoke.mjs"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.1.0"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.8",
+    "@opentui/solid": ">=0.5.8",
+    "solid-js": ">=1.9.0"
+  }
+}
