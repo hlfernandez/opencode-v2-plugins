@@ -8,9 +8,18 @@
 
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { parseCommit, parseStatus, read, relativeTime, splitPath } from "../data.ts"
+import {
+  parseCommit,
+  parseProjectConfig,
+  parseStatus,
+  projectDirectory,
+  read,
+  relativeTime,
+  resolveConfiguredDirectory,
+  splitPath,
+} from "../data.ts"
 
 let failures = 0
 
@@ -93,6 +102,19 @@ check("nested path", splitPath("a/b/c.ts").dir === "a/b/" && splitPath("a/b/c.ts
 check("root file", splitPath("README.md").dir === "" && splitPath("README.md").name === "README.md")
 check("untracked directory", splitPath("newdir/").dir === "" && splitPath("newdir/").name === "newdir/")
 
+console.log("project config")
+
+check("absolute directory", resolveConfiguredDirectory("/srv/repo", "/home/me/project") === "/srv/repo")
+check("absolute directory normalised", resolveConfiguredDirectory("/srv/./repo", "/base") === "/srv/repo")
+check("relative directory", resolveConfiguredDirectory("../other", "/home/me/project") === "/home/me/other")
+check("home directory", resolveConfiguredDirectory("~/src/repo", "/base") === join(homedir(), "src/repo"))
+check("bare home", resolveConfiguredDirectory("~", "/base") === homedir())
+check("config directory value", parseProjectConfig('{ "directory": " ../repo " }') === "../repo")
+check("config ignores invalid json", parseProjectConfig("{ nope") === undefined)
+check("config ignores non-string", parseProjectConfig('{ "directory": 42 }') === undefined)
+check("config ignores empty value", parseProjectConfig('{ "directory": "  " }') === undefined)
+check("config ignores missing key", parseProjectConfig("{}") === undefined)
+
 console.log("git integration")
 
 const dir = await mkdtemp(join(tmpdir(), "git-panel-test-"))
@@ -162,6 +184,64 @@ try {
 
   const missing = await read(join(dir, "does-not-exist"))
   check("missing directory is not a repository", missing.repo === false && missing.modified.length === 0)
+
+  const project = join(dir, "project")
+  const app = join(project, "packages", "app")
+  const other = join(dir, "other")
+  const worktree = join(dir, "worktree")
+  await mkdir(app, { recursive: true })
+  await mkdir(join(project, ".opencode"), { recursive: true })
+  await mkdir(other)
+  await mkdir(worktree)
+
+  const gitOther = (...args) => execFileSync("git", ["-C", other, ...args], { stdio: "ignore" })
+  gitOther("init", "-q")
+  gitOther("config", "user.email", "test@example.com")
+  gitOther("config", "user.name", "Test")
+  await writeFile(join(other, "x.txt"), "x\n")
+  gitOther("add", "-A")
+  gitOther("commit", "-qm", "other repo")
+
+  const configFile = join(project, ".opencode", "git-panel.json")
+  await writeFile(configFile, '{ "directory": "../other" }')
+
+  const relative = await projectDirectory(app)
+  check(
+    "relative override resolves from the project root",
+    relative.directory === other && relative.source === "project" && relative.name === "other" && !relative.missing,
+    JSON.stringify(relative),
+  )
+
+  const overridden = await read(relative.directory)
+  check("override target is read", overridden.repo && overridden.commit?.subject === "other repo", JSON.stringify(overridden.commit))
+
+  await writeFile(configFile, JSON.stringify({ directory: other }))
+  const absolute = await projectDirectory(app)
+  check("absolute override", absolute.directory === other && absolute.missing === false, JSON.stringify(absolute))
+
+  await writeFile(configFile, '{ "directory": "../missing-dir" }')
+  const missingTarget = await projectDirectory(app)
+  check(
+    "missing override target is reported",
+    missingTarget.source === "project" && missingTarget.missing === true,
+    JSON.stringify(missingTarget),
+  )
+
+  await mkdir(join(app, ".opencode"), { recursive: true })
+  await writeFile(join(app, ".opencode", "git-panel.json"), '{ "directory": "../../.." }')
+  const nearest = await projectDirectory(app)
+  check("nearest config wins", nearest.directory === dir, JSON.stringify(nearest))
+
+  await writeFile(configFile, '{ "directory": "../other" }')
+  const inherited = await projectDirectory(worktree, project)
+  check("worktree inherits the canonical config", inherited.directory === other, JSON.stringify(inherited))
+
+  const plain = await projectDirectory(dir)
+  check(
+    "no config keeps the session directory",
+    plain.source === "session" && plain.directory === dir,
+    JSON.stringify(plain),
+  )
 } finally {
   await rm(dir, { recursive: true, force: true })
 }

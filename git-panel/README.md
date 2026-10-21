@@ -72,11 +72,40 @@ Refresh also runs (debounced) on `filesystem.changed`, `vcs.branch.updated`,
 `session.idle`, `worktree.resolved` and `worktree.updated` events. Event names
 missing on a host version are ignored; the timer still covers them.
 
+## Per-project directory
+
+By default the panel follows the active session's directory. To track another
+local repository in one project, add a config file under that project's
+`.opencode/` directory:
+
+```jsonc title="<project>/.opencode/git-panel.json"
+{
+  "directory": "../infra"
+}
+```
+
+- `directory` may be absolute, start with `~/`, or be relative to the project
+  root (the directory that contains `.opencode/`). Absolute paths are recommended.
+- The nearest file walking up from the session directory wins. When the session
+  has no config of its own, a worktree falls back to the canonical checkout's
+  file.
+- The header shows `↗ <name>` while an override is active.
+- If the configured directory is missing or is not a Git repository, the panel
+  shows that message in orange instead of git data. The server directory is
+  never used as a silent fallback.
+- Invalid JSON or a non-string `directory` is ignored with a warning in the log,
+  keeping the default behavior.
+
+There is no project-local `cli.json`, so this file is the only per-project
+setting the plugin reads. Plugin options in `opencode.json(c)` reach server
+plugins only, not this CLI-only package.
+
 ## What it shows
 
 | Part | Source | Color |
 | --- | --- | --- |
 | header | branch from `# branch.head` | accent |
+| `↗ <name>` | configured project directory | muted |
 | `(N)` | modified + untracked count | muted |
 | hash | `git log -1 --format=%h` | warning |
 | subject | `git log -1 --format=%s` | base text |
@@ -101,8 +130,8 @@ A detached HEAD renders `detached` in the header. An empty repository shows
 All calls use `GIT_OPTIONAL_LOCKS=0`, a 5 s timeout and an 8 MB output cap, so
 refreshes never take index locks or hang the UI. Paths are always relative to the
 repository root, even when the session lives in a subdirectory. The directory is
-the active session's location, falling back to the current location and its
-default.
+the active session's location, unless a [project config](#per-project-directory)
+points somewhere else, falling back to the current location and its default.
 
 ## Notes and limitations
 
@@ -113,6 +142,10 @@ default.
   nothing is rendered.
 - Worktrees: the panel follows the session's location, so open the session in the
   worktree directory to see that worktree's changes.
+- The project config is read by the local CLI process, so with a remote server its
+  paths must exist on the machine running the CLI.
+- A project config can point the panel at any local path, including outside the
+  workspace; the reads stay read-only.
 
 ## Local development
 

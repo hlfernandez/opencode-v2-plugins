@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { createEffect, createSignal, For, Show } from "solid-js"
 import { Plugin } from "@opencode/plugin/tui"
-import { empty, read, relativeTime, splitPath, type Change, type ChangeCode, type GitState } from "./data.ts"
+import { empty, projectDirectory, read, relativeTime, splitPath, type Change, type ChangeCode, type GitState, type ResolvedTarget } from "./data.ts"
 
 function sessionDirectory(context: Plugin.Context, sessionID?: string) {
   const session = sessionID ? context.data.session.get(sessionID) : undefined
@@ -61,6 +61,8 @@ function ListSection(props: { context: Plugin.Context; title: string; items: Cha
 function Panel(props: {
   context: Plugin.Context
   state: () => GitState
+  notice: () => string | undefined
+  label: () => string | undefined
   sessionID: string
   follow: (sessionID?: string) => void
   open: boolean
@@ -77,7 +79,7 @@ function Panel(props: {
   createEffect(() => props.follow(props.sessionID))
 
   return (
-    <Show when={state().repo}>
+    <Show when={state().repo || props.notice()}>
       <box flexDirection="column" flexShrink={0}>
         <box flexDirection="row" gap={1} onMouseDown={props.toggle} minWidth={0}>
           <text flexShrink={0} fg={theme().text.muted}>
@@ -86,29 +88,52 @@ function Panel(props: {
           <text flexShrink={0} fg={theme().text.base}>
             <b>Git</b>
           </text>
-          <text flexGrow={1} flexShrink={1} minWidth={0} wrapMode="none" truncate fg={theme().hue.accent[500]}>
-            {branch()}
-          </text>
-          <text flexShrink={0} fg={theme().text.muted}>
-            ({total()})
-          </text>
-        </box>
-        <Show when={props.open}>
-          <Show when={commit()} fallback={<text fg={theme().text.muted}>No commits yet</text>}>
-            {(value) => (
-              <>
-                <text wrapMode="none" truncate>
-                  <span style={{ fg: theme().text.feedback.warning.base }}>{value().hash}</span>
-                  <span style={{ fg: theme().text.base }}> {value().subject || "(no subject)"}</span>
-                </text>
-                <text fg={theme().text.muted}>{relativeTime(value().time)}</text>
-              </>
+          <Show when={props.label()}>
+            {(name) => (
+              <text flexShrink={0} fg={theme().text.muted}>
+                ↗ {name()}
+              </text>
             )}
           </Show>
-          <ListSection context={props.context} title="Modified" items={state().modified} maxFiles={props.maxFiles} />
-          <ListSection context={props.context} title="New" items={state().untracked} maxFiles={props.maxFiles} />
-          <Show when={clean() && commit()}>
-            <text fg={theme().text.feedback.success.base}>✓ Working tree clean</text>
+          <Show when={props.notice()}>
+            <text flexShrink={0} fg={theme().text.feedback.warning.base}>
+              !
+            </text>
+          </Show>
+          <Show when={!props.notice()}>
+            <text flexGrow={1} flexShrink={1} minWidth={0} wrapMode="none" truncate fg={theme().hue.accent[500]}>
+              {branch()}
+            </text>
+            <text flexShrink={0} fg={theme().text.muted}>
+              ({total()})
+            </text>
+          </Show>
+        </box>
+        <Show when={props.open}>
+          <Show
+            when={props.notice()}
+            fallback={
+              <>
+                <Show when={commit()} fallback={<text fg={theme().text.muted}>No commits yet</text>}>
+                  {(value) => (
+                    <>
+                      <text wrapMode="none" truncate>
+                        <span style={{ fg: theme().text.feedback.warning.base }}>{value().hash}</span>
+                        <span style={{ fg: theme().text.base }}> {value().subject || "(no subject)"}</span>
+                      </text>
+                      <text fg={theme().text.muted}>{relativeTime(value().time)}</text>
+                    </>
+                  )}
+                </Show>
+                <ListSection context={props.context} title="Modified" items={state().modified} maxFiles={props.maxFiles} />
+                <ListSection context={props.context} title="New" items={state().untracked} maxFiles={props.maxFiles} />
+                <Show when={clean() && commit()}>
+                  <text fg={theme().text.feedback.success.base}>✓ Working tree clean</text>
+                </Show>
+              </>
+            }
+          >
+            {(message) => <text fg={theme().text.feedback.warning.base}>{message()}</text>}
           </Show>
         </Show>
       </box>
@@ -127,34 +152,67 @@ export default Plugin.define({
     const maxFiles = configuredMax >= 0 ? Math.min(configuredMax, 50) : 5
 
     const [state, setState] = createSignal<GitState>(empty())
+    const [notice, setNotice] = createSignal<string | undefined>(undefined)
+    const [label, setLabel] = createSignal<string | undefined>(undefined)
     const [view, setView] = context.storage.store("view", { initial: { open: true } })
-    const [directory, setDirectory] = createSignal("")
 
-    let currentDirectory = ""
+    let currentSession: string | undefined
+    let sessionToken = 0
     let pending = false
     let queued = false
     let disposed = false
 
-    const refresh = (target = directory()) => {
-      if (disposed || !target) return
+    void context.data.project.sync().catch(() => {})
+
+    const target = async (): Promise<ResolvedTarget> => {
+      const fallback = sessionDirectory(context, currentSession)
+      if (!fallback) return { directory: "", source: "session" }
+      const session = currentSession ? context.data.session.get(currentSession) : undefined
+      const canonical = session?.projectID ? context.data.project.get(session.projectID)?.canonical : undefined
+      return projectDirectory(fallback, canonical)
+    }
+
+    const sync = async () => {
+      if (disposed) return
       if (pending) {
         queued = true
         return
       }
 
       pending = true
-      read(target)
-        .then((next) => {
-          if (!disposed && directory() === target) setState(next)
-        })
-        .catch(() => {})
-        .finally(() => {
-          pending = false
-          if (!disposed && queued) {
-            queued = false
-            refresh()
-          }
-        })
+      const token = sessionToken
+      try {
+        const next = await target()
+        if (disposed || token !== sessionToken) return
+
+        setLabel(next.source === "project" ? next.name : undefined)
+
+        if (next.missing) {
+          setState(empty())
+          setNotice(`Directory not found: ${context.ui.format.path(next.directory)}`)
+          return
+        }
+
+        const result = next.directory ? await read(next.directory) : empty()
+        if (disposed || token !== sessionToken) return
+
+        if (next.source === "project" && !result.repo) {
+          setState(empty())
+          setNotice(`Not a git repository: ${context.ui.format.path(next.directory)}`)
+          return
+        }
+
+        setNotice(undefined)
+        setState(result)
+      } catch {
+        // Keep the previous state on transient failures.
+      } finally {
+        pending = false
+        if (!disposed && queued) {
+          queued = false
+          void sync()
+        }
+      }
     }
 
     let debounce: ReturnType<typeof setTimeout> | undefined
@@ -162,17 +220,17 @@ export default Plugin.define({
       if (debounce) clearTimeout(debounce)
       debounce = setTimeout(() => {
         debounce = undefined
-        refresh()
+        void sync()
       }, 200)
     }
 
     const follow = (sessionID?: string) => {
       if (disposed) return
-      const next = sessionDirectory(context, sessionID)
-      if (next === currentDirectory) return
-      currentDirectory = next
-      setDirectory(next)
-      refresh(next)
+      if (sessionID !== currentSession) {
+        currentSession = sessionID
+        sessionToken++
+      }
+      void sync()
     }
 
     const toggle = () => {
@@ -183,7 +241,7 @@ export default Plugin.define({
       ).catch(() => {})
     }
 
-    const timer = setInterval(() => refresh(), interval)
+    const timer = setInterval(() => void sync(), interval)
 
     const offs: (() => void)[] = []
     for (const type of [
@@ -206,6 +264,8 @@ export default Plugin.define({
         <Panel
           context={context}
           state={state}
+          notice={notice}
+          label={label}
           sessionID={input.sessionID}
           follow={follow}
           open={view.open}
