@@ -1,0 +1,46 @@
+{
+  "name": "opencode-go-panel",
+  "version": "1.0.0",
+  "description": "OpenCode Go quota in the OpenCode V2 CLI sidebar: rolling, weekly and monthly usage windows from the Go usage API.",
+  "type": "module",
+  "exports": {
+    "./tui": "./tui.tsx"
+  },
+  "files": [
+    "tui.tsx",
+    "usage.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-tui",
+    "tui",
+    "opencode-go",
+    "usage",
+    "quota",
+    "sidebar"
+  ],
+  "license": "MIT",
+  "author": "Hugo López Fernández",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hlfernandez/opencode-v2-plugins.git",
+    "directory": "go-usage"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types test/usage.test.mjs"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.1.0"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.8",
+    "@opentui/solid": ">=0.5.8",
+    "solid-js": ">=1.9.0"
+  }
+}
