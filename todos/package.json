@@ -1,0 +1,46 @@
+{
+  "name": "opencode-todos-panel",
+  "version": "1.0.0",
+  "description": "A TODO list in the OpenCode V2 CLI sidebar with add, push and pop stack commands.",
+  "type": "module",
+  "exports": {
+    "./tui": "./tui.tsx"
+  },
+  "files": [
+    "tui.tsx",
+    "todos.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-tui",
+    "tui",
+    "todos",
+    "todo-list",
+    "stack",
+    "sidebar"
+  ],
+  "license": "MIT",
+  "author": "Hugo López Fernández",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hlfernandez/opencode-v2-plugins.git",
+    "directory": "todos"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types test/todos.test.mjs"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.1.0"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.8",
+    "@opentui/solid": ">=0.5.8",
+    "solid-js": ">=1.9.0"
+  }
+}
