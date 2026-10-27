@@ -50,16 +50,29 @@ For a local checkout, OpenCode discovers packages placed in
 
 ## Authentication
 
-The plugin resolves the key in this order:
+The plugin resolves the token in this order:
 
 1. The environment variable named by `apiKeyEnv` (`OPENCODE_GO_API_KEY` by default).
-2. The active **OpenCode Go** credential stored by OpenCode V2. The plugin asks the
-   connected OpenCode service through `credential.list()`, keeps the key in memory
-   for the session, and never writes it to disk, configuration, storage or logs.
+2. An **OpenCode Go** credential stored by OpenCode V2. The active key is preferred;
+   if none is active, the first stored key is used.
+3. An active **OpenCode Console** OAuth credential (`integrationID: "opencode"`). Its
+   access token is sent as the bearer token, so users who signed in through the
+   Console can use the panel without a separate Go key.
 
-If no key is found, the panel shows an orange message with the two options above.
-Signing in again through OpenCode updates the credential; the plugin picks it up on
-`credential.updated` / `credential.switched` events.
+The plugin asks the connected OpenCode service through `credential.list()`, keeps the
+token in memory for the session, and never writes it to disk, configuration, storage
+or logs.
+
+If none is found, the panel shows an orange message with the options above. Signing in
+again through OpenCode updates the credential; the plugin picks it up on
+`credential.updated` / `credential.switched` events and re-reads the credential after
+a 401.
+
+The Console access token can expire. The plugin does not refresh it itself; it relies
+on OpenCode to refresh the stored credential and reads the new token on the next
+refresh after a 401 or when a credential event arrives. A Console account without Go
+entitlement may produce an API error instead of the `No OpenCode Go key found`
+message.
 
 ## Options
 
@@ -73,7 +86,7 @@ Signing in again through OpenCode updates the credential; the plugin picks it up
 
 - Once when the plugin loads.
 - When a session becomes idle (`session.idle`), debounced to 750 ms.
-- When the Go credential is updated or switched.
+- When the Go or Console credential is updated or switched.
 - Every `interval` milliseconds as a backstop.
 
 Requests time out after 5 s. HTTP 401/403, 429, 5xx, timeouts and network errors are
@@ -82,7 +95,7 @@ succeeds.
 
 ## Data source
 
-`GET https://opencode.ai/zen/go/v1/usage` with `Authorization: Bearer <key>`:
+`GET https://opencode.ai/zen/go/v1/usage` with `Authorization: Bearer <Go key or Console access token>`:
 
 ```json
 {
@@ -103,8 +116,8 @@ between 0 and 100, and parseable `resetsAt` values.
 - The endpoint is not part of OpenCode's public API documentation and may change.
 - A custom `User-Agent` is required; the default of scripted HTTP clients is blocked
   by Cloudflare.
-- With a remote OpenCode server, the plugin uses that server's stored Go credential
-  and the local CLI still performs the HTTPS request.
+- With a remote OpenCode server, the plugin uses that server's stored Go or Console
+  credential and the local CLI still performs the HTTPS request.
 - No notifications or usage alerts yet; only the colour changes.
 - Read-only: the plugin never modifies your account, sessions or configuration.
 
@@ -117,8 +130,8 @@ npm test
 ```
 
 The suite covers the payload parser, remaining percentages, countdowns and local
-reset times, key selection, HTTP errors, state retention after a failed refresh, and
-debounce behaviour.
+reset times, key selection (including the Console OAuth fallback), HTTP errors, state
+retention after a failed refresh, and debounce behaviour.
 
 ## License
 

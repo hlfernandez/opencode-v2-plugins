@@ -38,7 +38,7 @@ export type Outcome = { ok: true; usage: GoUsage } | { ok: false; error: string 
 export type CredentialLike = {
   integrationID: string
   active?: boolean
-  value: { type: string; key?: string }
+  value: { type: string; key?: string; access?: string }
 }
 
 export type KeyInput = {
@@ -142,8 +142,10 @@ export function formatAgo(timestamp: number, now = Date.now()): string {
 }
 
 // Environment wins over the credential store so a key can be overridden for
-// testing without signing in. Only active key credentials are considered; OAuth
-// and external credentials carry no usable secret for this endpoint.
+// testing without signing in. An OpenCode Go key credential is preferred (the
+// active one, then the first stored key), and the OpenCode Console OAuth access
+// token is used as a fallback so users who signed in through the Console do not
+// need a separate Go key.
 export function selectApiKey(input: KeyInput): KeyResult {
   const source = input.env
   const read = typeof source === "function" ? source : (name: string) => source?.[name]
@@ -160,7 +162,19 @@ export function selectApiKey(input: KeyInput): KeyResult {
 
   const entry = keys.find((candidate) => candidate.active) ?? keys[0]
   const key = entry?.value.key?.trim()
-  return key ? { key, source: "credential" } : {}
+  if (key) return { key, source: "credential" }
+
+  const oauth = (input.credentials ?? []).find(
+    (entry) =>
+      entry.integrationID === "opencode" &&
+      entry.active !== false &&
+      entry.value?.type === "oauth" &&
+      typeof entry.value.access === "string" &&
+      entry.value.access.trim().length > 0,
+  )
+
+  const access = oauth?.value.access?.trim()
+  return access ? { key: access, source: "credential" } : {}
 }
 
 export function settle(previous: PanelState, outcome: Outcome, now = Date.now()): PanelState {

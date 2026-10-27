@@ -128,7 +128,52 @@ const ignoresOAuth = selectApiKey({
     { integrationID: "github-copilot", active: true, value: { type: "key", key: "wrong" } },
   ],
 })
-check("ignores oauth and other integrations", ignoresOAuth.key === undefined, JSON.stringify(ignoresOAuth))
+check("ignores Go oauth and other integrations", ignoresOAuth.key === undefined, JSON.stringify(ignoresOAuth))
+
+const envWinsOverConsoleOAuth = selectApiKey({
+  envName: "X",
+  env: { X: "env-key" },
+  credentials: [
+    { integrationID: "opencode", active: true, value: { type: "oauth", access: "console-token" } },
+  ],
+})
+check(
+  "environment wins over console oauth",
+  envWinsOverConsoleOAuth.key === "env-key" && envWinsOverConsoleOAuth.source === "env",
+  JSON.stringify(envWinsOverConsoleOAuth),
+)
+
+const consoleOAuth = selectApiKey({
+  envName: "X",
+  env: {},
+  credentials: [
+    { integrationID: "opencode", active: true, value: { type: "oauth", access: "  console-token  " } },
+  ],
+})
+check(
+  "console oauth fallback",
+  consoleOAuth.key === "console-token" && consoleOAuth.source === "credential",
+  JSON.stringify(consoleOAuth),
+)
+
+const goKeyWinsOverConsoleOAuth = selectApiKey({
+  envName: "X",
+  env: {},
+  credentials: [
+    { integrationID: "opencode", active: true, value: { type: "oauth", access: "console-token" } },
+    goKey(true, "go-key"),
+  ],
+})
+check("go key wins over console oauth", goKeyWinsOverConsoleOAuth.key === "go-key", JSON.stringify(goKeyWinsOverConsoleOAuth))
+
+const inactiveConsoleOAuth = selectApiKey({
+  envName: "X",
+  env: {},
+  credentials: [
+    { integrationID: "opencode", active: false, value: { type: "oauth", access: "console-token" } },
+  ],
+})
+check("ignores inactive console oauth", inactiveConsoleOAuth.key === undefined, JSON.stringify(inactiveConsoleOAuth))
 
 check("no key found", Object.keys(selectApiKey({ envName: "X", env: {}, credentials: [] })).length === 0)
 
